@@ -1,8 +1,8 @@
 ---
-title: "Post With Code"
+title: "MY PROJECT"
 author: "Harlow Malloc"
 date: "2023-09-19"
-categories: [news, code, analysis]
+categories: [code]
 image: "image.jpg"
 ---
 
