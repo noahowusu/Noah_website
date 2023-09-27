@@ -1,0 +1,789 @@
+---
+title: 'Project VI: GAM, MARS, and PPR'
+author: "Owusu Noah"
+date: "`r format(Sys.Date(), '%m %d, %Y')`"
+output:
+  pdf_document:
+    fig_caption: yes
+    keep_tex: yes
+    latex_engine: xelatex
+    number_sections: yes
+    toc: yes
+    toc_depth: 4
+  word_document:
+    toc: yes
+    toc_depth: '4'
+  html_document:
+    toc: yes
+    toc_depth: '4'
+    df_print: paged
+header-includes:
+- \usepackage{amsmath}
+- \usepackage{amssymb}
+- \usepackage{amsfonts}
+- \usepackage{amsthm}
+- \usepackage{fancyhdr}
+- \pagestyle{fancy}
+- \fancyhf{}
+- \rhead{Owusu Noah}
+- \lhead{GAM, MARS, and PPR}
+- \cfoot{\thepage}
+- \usepackage{algorithm}
+- \usepackage[noend]{algpseudocode}
+geometry: margin = 0.5in
+spacing: single
+fontsize: 11pt
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, out.width="90%")
+
+setwd("C:\\Users\\19152\\OneDrive\\Desktop\\STAT 5014\\Noah_Website\\mydocs\\hr data analysis")
+```
+
+\newpage
+\section{Question 1 - Data Preparation}
+
+\subsection{Importing the data}
+```{r warning=FALSE, message=FALSE}
+library(dplyr)
+hr <- "HR_comma_sep.csv" %>% 
+  read.csv()
+
+head(hr); dim(hr)
+```
+\textbf{Comment:}
+
+The **HR** data has $14999$ observations and $10$ variables, namely **satisfaction_level** ,**number of project** etc.
+
+
+\subsubsection{Changing the categorical variable \textit{salary} to ordinal}
+```{r}
+hr$salary <- factor(hr$salary, 
+        levels=c("low", "medium","high"), ordered=TRUE)
+
+class(hr$salary)
+```
+\newpage
+\subsubsection{Changing the column name of variable sales to department}
+```{r}
+colnames(hr)[colnames(hr) == 'sales'] <- 'department'
+  
+head(hr, 2)
+```
+
+\subsubsection{Converting the target variable "left" to categorical variable}
+```{r}
+hr$left <- factor(hr$left, levels = c(0,1), labels = c("stayed", "left"))
+class(hr$left)
+```
+
+\textbf{Comment:}
+
+Yes! the target variable **left** is now a categorical variable.
+
+\subsubsection{Inspecting missing values}
+```{r warning=FALSE, message=FALSE}
+# Listing the missing rate for each variable.
+miss.info <- function(dat, filename=NULL){
+  vnames <- colnames(dat); vnames
+  n <- nrow(dat)
+  out <- NULL
+  for (j in 1: ncol(dat)){
+    vname <- colnames(dat)[j]
+    x <- as.vector(dat[,j])
+    n1 <- sum(is.na(x), na.rm=T)
+    n2 <- sum(x=="NA", na.rm=T)
+    n3 <- sum(x=="", na.rm=T)
+    nmiss <- n1 + n2 + n3
+    ncomplete <- n-nmiss
+    out <- rbind(out, c(col.number=j, vname=vname, 
+                        mode=mode(x), n.levels=length(unique(x)), 
+                        ncomplete=ncomplete, miss.perc=nmiss/n))
+  }
+  out <- as.data.frame(out)
+  row.names(out) <- NULL 
+  if (!is.null(filename)) write.csv(out, file = filename, row.names=F)
+  return(out)
+}
+df <- knitr::kable(miss.info(hr), booktabs = T, format = "markdown") 
+kableExtra::kable_styling(df, bootstrap_options = "striped", full_width = F)
+```
+\textbf{Comment:}
+
+From the above table, it is clear that the **hr** dataset have no missing value.This is a desired outcome to guarantee a reliable conclusion and practicable subsequent analysis.
+
+\newpage
+\section{Question 2 - Exploratory Data Analysis}
+
+```{r echo=FALSE, message=FALSE, warning=FALSE, packages}
+#library(devtools)
+#install_github("thomasp85/patchwork")
+library(ggplot2)
+library(dplyr)
+library(GGally)
+library(gridExtra)
+library(reshape2)
+library(knitr)
+library(ggpubr)
+library(epiDisplay)
+library(corrplot)
+library(plotly)
+library(patchwork)
+library(cowplot)
+```
+
+\subsection{Checking for variable type}
+```{r}
+glimpse(hr)
+```
+\textbf{Comment:}
+
+From the above output, variables **satisfaction_level** and **last_evaluation** are numeric(continuous) variable, **salary** is categorical (ordinal) variable , and **sales and left** are categorical (nominal) variable. The remaining variables are numeric(integer) variable.
+
+\subsection{Frequency distribution of target variable}
+```{r}
+#Inspecting frequency distribution of the target variable (left)
+tab1(hr$left, decimal = 2, cum.percent = F, xlab = "Left the company", ylab = "Frequency", col = "blue")
+```
+\text{Comment:}
+
+The frequency table revealed 11428(76.19%) **stayed** counts and 3571(23.81%) **left** counts for the  **left** variable. This classification case is neither completely balanced nor unbalanced. However, we will consider this scenario as a balanced classification and continue with our analysis since the proportion of employees who left is greater than 5% (which is the cutoff proportion for imbalanced classification).
+
+\
+**(2a)**
+\subsection{Scatterplot of employees Satisfaction level vrs Number of project}
+```{r warning=FALSE, message=FALSE}
+ggplot(data = hr, aes(x= number_project, color = left))+
+  geom_point(position=position_jitterdodge(),alpha=.5,
+             aes (y =   satisfaction_level), bins = 2) +
+  scale_color_manual("Status", values = c("cyan2", "orange"))
+   labs(title = 
+"Employee's Satisfaction level vrs Number of projects (Left the Comapny - stayed/left)",
+           x = "Number of projects", y = "Satisfaction level")+
+            theme(plot.title = element_text(size=9),
+                   axis.text.x = element_text(size=6) )
+```
+\
+
+\textbf{Comment:}
+
+From the plot above, we can see that employees who are satisfied with their work are less willing to leave. Thus, the more satisfied employees are, the less willingly they are to leave. However, the interesting thing is that we can find that not all employees with low-paying and unsatisfactory jobs left the company. Most of them continued working with the company. Finding these employees and understanding why they are unwilling to leave can provide valuable information to the HR department. Moreover, Among employees who left, had **2 number_project** were not satisfied since majority of them had satisfaction level below $0.50$
+
+\
+**(2b)**
+\subsection{Correlation matrix among the variables in the \textbf{hr} dataset}
+```{r warning=FALSE, message=FALSE, fig.width=10}
+library(GoodmanKruskal)
+mat.hr <- GKtauDataframe(hr)
+plot(mat.hr, dgts = 2, diagSize = 0.8)
+```
+
+\
+\textbf{Comment:}
+
+After carefully examining the data, The variables **satisfaction_level, last_evaluation, number_project** and **average_monthly_hours** exhibit slight forward associations with the target variable **left**, the reverse associations are much smaller.
+
+The variable **satisfaction_level** exhibits a slight ability to explain variations in the other variables (ranging from **0.01** to **0.53**), the reverse associations are much smaller: the $\tau$ value from **satisfaction_level** to **left** is **0.53**,indicating quite a strong association while that from **satisfaction_level** to **number_project** is **0.18**. 
+
+
+\subsection{Interesting finding 1}
+
+\textbf{Salary VRS. Employee turnover}
+```{r warning=FALSE, message=FALSE}
+t1 <- table(hr$salary,hr$left)
+df <- as.data.frame(prop.table(t1))
+
+#round(prop.table(t1), 3)
+
+ggplot(df, aes(x=Var1,y=Freq,fill=Var2)) +
+  geom_bar(position="dodge",stat='identity')+
+  ggtitle("Barplot of salary vrs left")+
+  xlab("Salary category")+ ylab("Proportion of employess")+
+  scale_fill_manual(values = c("cyan2","orange"))
+
+
+```
+
+
+\
+\textbf{Comment:}
+From the above results, the data indicates that employees who left the company tend to have lower salaries when compared to employees who do not.
+
+Among the employees who left the company, majority received low and medium salaries.
+
+\
+\subsection{Interesting finding 2}
+
+The frequency distribution of time spent by employees in the company were first explored and a graphical representation drawn after using a barplot.
+
+```{r}
+table(hr$time_spend_company)
+```
+
+
+```{r warning=FALSE, message=FALSE}
+ggplot(data = hr, aes(x = time_spend_company, y = ..count..))+ 
+  geom_bar(fill = c(3,5,7,9,11,13,15,6), 
+                     alpha = 0.6)+
+  scale_x_continuous(breaks= seq(0,10,1))+
+  theme_bw()+
+  ggtitle("Years in company")+
+  theme(plot.title = element_text(hjust = 0.5))+
+  labs(x = "Years", y = "Number of employees")+
+  theme(plot.title = element_text(size = 13,face = "bold"),
+              text = element_text(size = 10))
+```
+
+\
+\textbf{Comment:}
+
+The range of time spent by an employee in the company is *2* to *10* years with *no* employee working for *9* years. 
+It can also be seen from the above figure that over 6000 employees in the company spent  *three years* whilst a few employees spent *eight years* with the company. 
+
+\
+\subsection{Interesting finding 3}
+
+**Distribution of features grouped by the target variable**
+
+```{r}
+OverlayedHist <- function(mData, featureVar, grouper, mbinwidth, mTitle,  mxlab,
+                          mylab, mlegendTitle){
+  
+  p <- ggplot(hr, aes(eval(parse(text = featureVar)), fill = eval(parse(text = grouper))))+
+    geom_histogram(alpha = 0.7, position = 'identity', binwidth = mbinwidth) + 
+    scale_fill_manual(mlegendTitle, values=c("#377EB8","#E41A1C")) + 
+    ggtitle(mTitle) +xlab(mxlab) + ylab(mylab) + 
+    theme(plot.title = element_text(size=10))
+
+  
+  return(p)
+}
+```
+
+```{r}
+p1 <- OverlayedHist(mData = hr, featureVar = "satisfaction_level", 
+                    grouper = "left", mbinwidth    =  0.02,
+                    mTitle = "Distribution of satisfaction level",
+                    mxlab  = "Satisfaction level", mylab = "Number of employees",
+                    mlegendTitle = "Status")
+
+p2 <- OverlayedHist(mData = hr, featureVar  = "last_evaluation",
+                    grouper = "left", mbinwidth    =  0.02,
+                    mTitle  = "Distribution of last evaluation",
+                    mxlab   = "Last evaluation", mylab  = "Number of employees",
+                    mlegendTitle = "Status")
+
+p3 <- OverlayedHist(mData = hr,featureVar   = "number_project",grouper = "left",
+                    mbinwidth = 0.8, mTitle= "Distribution of number of projects",
+                    mxlab = "Number of projects", mylab = "Number of employees",
+                    mlegendTitle = "Status")
+
+p4 <- OverlayedHist(mData = hr,featureVar   = "average_montly_hours",
+                    grouper = "left",mbinwidth    =  1.5,
+                    mTitle ="Distribution of number of monthly hours",
+                    mxlab = "Number of monthly hours",mylab= "Number of employees",
+                    mlegendTitle = "Status")
+ggarrange(p1,p2,p3,p4, ncol = 2, nrow = 2)
+```
+\
+\textbf{Comment:}
+
+From the plot, it seems that employees who quit their role are less satisfied than those who remain loyal to their company. Employees’ last evaluation seems to follow a bi modal pattern. There are employees who left, performed really well and had evaluation score over 0.75 while there is another group who was under performing with an evaluation score less than 0.55. The same pattern is observed also in the distribution of monthly hours (bottom right plot) where there are two group of employees who quit. Those who put extra effort and those who worked significantly less than the average number of monthly hours.
+
+\
+
+\textbf{Interesting finding 4}
+
+**Relationship between department and salary**
+```{r}
+ggplot(hr, aes(x=salary,y= time_spend_company, fill  = left)) +
+  geom_bar(position="dodge",stat='identity')+
+  ggtitle("Barplot of salary vrs left")+
+  xlab("Salary category")+ ylab("Time_spend_company")+
+  scale_fill_manual("Status",values = c("cyan2","orange"))
+```
+\
+\textbf{Comment:}
+
+From the just above plot, it seems that majority of the employees who left spent less that seven years in the company as well as being in the low and medium salary category. However, a certain proportion of the employees who left the company received high salary.
+
+\
+**Density plot of employees satisfaction level**
+```{r}
+
+df.sat <- data.frame(hr$satisfaction_level, hr$left)
+colnames(df.sat) <- c("satisfaction_level", "Status")
+ggplot(df.sat, aes(x = satisfaction_level, fill = Status)) +
+geom_density(aes(satisfaction_level), alpha = 0.3) + xlab("Satisfaction level") +
+scale_fill_manual(values = c("magenta", "blue")) +
+ggtitle("Density Plot of employees satisfaction level") +
+theme_minimal()
+
+```
+\
+
+\textbf{Comment:}
+
+Among the employees who left, the distribution of their satisfaction level seems trimodal, where majority of them had satisfaction level within $0.25 - 0.50$.
+
+\newpage
+\section{Question 3 - Data Partitioning }
+```{r}
+set.seed(120) ## the set is to make the partition reproducible
+train <- sample(nrow(hr), (2.0/3.0)*nrow(hr), replace = FALSE) 
+D1 <- hr[train, ] # training set
+D2 <- hr[-train, ] # testing set
+
+dim(D1); dim(D2)
+```
+\
+\textbf{Comment:}
+
+For the train and test data, the data were divided at random into two groups with ratios of $2:1$. The train data set had $9999$ observations whilst the test set had $5000$ observations for each of the $10$ variables.
+
+\section{Question 4 - Logistic Regression}
+\subsection{Fitting the Logistic regression model using LASSO as regularization technique}
+```{r}
+library(glmnet)
+X <- model.matrix(left ~ satisfaction_level + number_project +  time_spend_company +
+factor(department) + last_evaluation +  average_montly_hours + Work_accident + promotion_last_5years + salary, data = D1)
+y <- D1$left
+
+fit.lasso <- glmnet(x=X, y=y, family="binomial", alpha=1, nfolds = 10,
+	lambda.min = 1e-4, nlambda = 30, standardize=T, thresh = 1e-07, 
+	maxit=1000)
+plot(fit.lasso)
+```
+\
+\textbf{Comment:}
+
+From above, the glmnet function acts as the elastic net regularization penalty, with the alpha value controlling it. A value of 1 indicates lasso, while a value of 0 indicates Ridge. A value of 1 was applied because lasso was chosen as the regularization penalty.
+The family specifies the kind of response variable, which in this case is binary. The number of lambda values was limited to thirty. Furthermore, the convergence threshold for coordinate descent was set to the default value. Finally, for all lambda values, the maximum number of passes over the data was set to 1000.
+
+\
+\subsection{Choosing the best tuning parameter by Cross-validation}
+```{r}
+CV_model <- cv.glmnet(x=X, y=y, family="binomial", alpha = 1, 
+	lambda.min = 1e-4, thresh = 1e-07, type.measure = "deviance", 
+	maxit=1000)
+CV_model
+plot(CV_model)
+```
+```{r}
+best_lambda <- CV_model$lambda.1se; best_lambda
+```
+\textbf{Comment:}
+
+The best lambda value is the largest value of lambda such that error is within 1 standard error of the minimum and it turns out to be `r round(best_lambda, 4)`. The criteria used to select the tuning parameter is the $1se$ rule.
+
+\subsection{Fitting the model based on the best tuning parameter}
+```{r}
+fit.lasso <- glmnet(x=X, y=y, family="binomial", alpha = 1, 
+                    lambda=best_lambda, thresh = 1e-07, 
+                    maxit=1000)
+fit.lasso$beta
+```
+\textbf{Comment:}
+
+No coefficient is shown for some predictors, because the lasso regression shrunk
+the coefficient all the way to zero. This means it was completely dropped from the model because it
+wasn’t influential enough. Hence, with the law of parsimony, the model with 12 variables is the chosen model.
+
+\
+**Fitting model with glm()**
+```{r}
+fit.glm <- glm(left ~ satisfaction_level + number_project   + time_spend_company + 
+department + last_evaluation +  average_montly_hours + Work_accident + promotion_last_5years + salary, 
+family = binomial, data=D1)
+summary(fit.glm)
+```
+\textbf{Comment:}
+
+Yes! We have similar results with using the standard *glm()* as using the regularized logistic regression (with LASSO as penalty function)
+
+
+\
+**Obtaining the associated odds ratio and the 95% confidence intervals for the odds ratio**
+```{r warning=FALSE, message=FALSE}
+exp(cbind(OR = coef(fit.glm), confint(fit.glm)))
+```
+\textbf{Comment:}
+
+From the above output, all the variables whose confidence interval does not include 1 are significant. In particular, variables  **satisfaction_level, last_evaluation, number_project, time_spend_company, work_accident, promotion_last_5years** and **average_monthly_hours** are all significant in explaining the variation in the log(odds) of an employee leaving the company.
+
+\
+\subsection{Evaluating the model using the test data}
+```{r}
+X.test <- model.matrix (left ~ satisfaction_level + number_project + 
+                  time_spend_company +factor(department) + last_evaluation +  
+                  average_montly_hours + Work_accident + promotion_last_5years + 
+                  salary, data = D2)
+
+pred.LASSO <- predict(fit.lasso, newx = X.test, s=best_lambda, type="response")
+```
+\
+
+\subsection{Plotting the ROC or AUC for the Logistic regression}
+```{r warning=FALSE, message=FALSE}
+library(verification)
+library(cvAUC)
+D2$left <- ifelse(D2$left == "stayed", 0,1)
+yobs <- D2$left
+AUC.LASSO <- ci.cvAUC(as.vector(pred.LASSO), labels=yobs, folds=1:NROW(D2),
+                confidence=0.95); AUC.LASSO
+
+
+mod.LASSO <- verify(obs = yobs, pred = as.vector(pred.LASSO))
+## If baseline is not included, baseline values will be calculated from the sample obs.
+
+roc.plot(mod.LASSO, plot.thres = NULL, col="darkblue")
+text(x=0.50, y=0.2, paste("AREA UNDER ROC.LASSO = ",
+round(AUC.LASSO$cvAUC, digits = 3),"WITH 95% CI (",
+round(AUC.LASSO$ci[1],3),",",round(AUC.LASSO$ci[2],3), ").", sep=" "),
+col="red", cex=1)
+
+```
+\
+\textbf{Comment:}
+
+The AUC from the LASSO technique is `r round(AUC.LASSO$cvAUC, 2)` which is high and it tells us that the model is a good fit and has good prediction accuracy.From the output, it can be concluded from the confidence interval that the model shows good discrimination.
+
+\newpage
+\section{QUESTION 5 - Random Forest}
+```{r warning=FALSE, message=FALSE}
+library(randomForest)
+fit.RF <- randomForest(left ~., data=D1,importance=TRUE, proximity=TRUE, ntree=100)
+fit.RF; plot(fit.RF)
+yhat.RF <- predict(fit.RF, newdata=D2, type="prob")[, 2]
+```
+\
+\textbf{Comment:}
+
+From the plot above, 100 decision trees has been built using the random forest algorithm based learning. We plotted the error rate across decision trees. The plot seems to indicate that after 20 decision trees, there is not a significant reduction in error rate.
+
+\
+**VARIABLE IMPORTANCE RANKING**
+```{r}
+round(importance(fit.RF), 2)
+varImpPlot(fit.RF, main="Variable Importance Ranking")
+```
+\
+\textbf{Comment:}
+
+According to the variable importance ranking for the random forest, the top four variables are **satisfaction level**, **number of project**, **last_evaluation** and **average_monthly_hours** based on the MeanDecreaseAccuracy. Promotion_last_5years is the least significant variable.
+
+\
+**Partial independence plot**
+```{r}
+par(mfrow=c(2,2))
+partialPlot(fit.RF, pred.data=D1, x.var=satisfaction_level, 
+            rug=TRUE, cex.lab=0.7, cex.main=0.6)
+partialPlot(fit.RF, pred.data=D1, x.var=number_project,
+            rug=TRUE, cex.lab=0.7, cex.main=0.6)
+partialPlot(fit.RF, pred.data=D1, x.var=average_montly_hours,
+            rug=TRUE, cex.lab=0.7, cex.main=0.6)
+partialPlot(fit.RF, pred.data=D1, x.var=last_evaluation, 
+            rug=TRUE, cex.lab=0.7, cex.main=0.6)
+```
+\
+\textbf{Comment:}
+
+The considerable nonlinearity displayed in the plots above demonstrates that the logistic regression model is inadequate.
+
+```{r}
+AUC.RF <- ci.cvAUC(yhat.RF, labels=yobs, folds=1:NROW(D2),
+                confidence=0.95); AUC.RF
+
+
+mod.RF <- verify(obs = yobs, pred = yhat.RF)
+
+roc.plot(mod.RF, plot.thres = NULL, col="darkblue")
+text(x=0.50, y=0.2, paste("AREA UNDER ROC.RF = ",
+round(AUC.RF$cvAUC, digits = 3),"WITH 95% CI (",
+round(AUC.RF$ci[1],3),",",round(AUC.RF$ci[2],3), ").", sep=" "),
+col="blue", cex=1)
+```
+\
+\textbf{Comment:}
+
+The AUC from the Random Forest is `r round(AUC.RF$cvAUC, 2)` which is high and it tells us that the model is a good fit and has good prediction accuracy.From the output, it can be concluded from the confidence interval that the model shows good discrimination.
+
+\newpage
+
+\section{QUESTION 6 - Generalized Additive Model (GAM)}
+\subsection{Fitting the model and summary}
+```{r warning=FALSE, message=FALSE}
+# install.packages("gam")
+library(gam)
+gam.fit1 <- gam(left ~ s(satisfaction_level) + s(last_evaluation) + number_project 
+                + lo(satisfaction_level,last_evaluation) +average_montly_hours 
+                + s(time_spend_company) + Work_accident +promotion_last_5years +
+                  salary, data=D1, na=na.gam.replace, 
+                control = gam.control(epsilon=1e-04, bf.epsilon = 1e-04,
+                                      maxit=50,bf.maxit = 50), family="binomial")
+
+gam.fit2 <- gam(left ~ lo(satisfaction_level) + s(last_evaluation) + lo(number_project)
+                + lo(average_montly_hours) + time_spend_company + Work_accident +
+                  promotion_last_5years  + salary, data=D1, na=na.gam.replace, 
+                control = gam.control(epsilon=1e-04, bf.epsilon = 1e-04, maxit=50, 
+                                      bf.maxit = 50), family="binomial")
+```
+
+\
+\textbf{Comment:}
+
+The above GAM models were defined as the sum of smooth covariate functions plus a standard parametric component of the linear predictors. Because the answer variable had binary outcomes, the family was set to binary. Also, the epsilon value is used to judge the conversion of the GLM IRLS loop, with a maximum of 50 IRLS iterations. The best model was then chosen using the BIC criterion. Furthermore, the AIC was used to pick the significant variables in the model using stepwise selection.
+
+```{r}
+summary(gam.fit1)
+```
+
+```{r}
+summary(gam.fit2)
+```
+\
+\textbf{Comment:}
+
+Taking into account the parametric effects, all variables were statistically significant at 0.001 significance level. 
+For the non-parameteric effects, the variables *time_spend_company,Work_accident, promotion_last_5years* and *salary* were statistically insignificant at any of the lest level whilst the remaining variables were all statistically significant at 0.001 alpha level. 
+
+\
+\subsection{Selecting the best model using the BIC criterion}
+
+```{r warning=FALSE, message=FALSE}
+b.df <- BIC(gam.fit1, gam.fit2)
+
+b.df <- knitr::kable(b.df, booktabs = T, format = "markdown", digits = 2) 
+kableExtra::kable_styling(b.df, bootstrap_options = "striped", full_width = F)
+```
+\
+\textbf{Comment:}
+
+Based on the BIC values computed above, **gam.fit2** model comparatively can be considered as the best since it has the smaller BIC value.
+\
+
+\subsubsection{Stepwise selection using the best model from previous results}
+```{r warning=FALSE, message=FALSE}
+fit.step <- step.Gam(gam.fit2, scope=list("satisfaction_level"=~1 + satisfaction_level+
+                    lo(satisfaction_level),
+"last_evaluation"=~1 + last_evaluation + lo(last_evaluation, 3) + s(last_evaluation, 2), 
+"number_project"=~1 + number_project + s(number_project, 2) + s(number_project, 4),
+    "average_monthly_hours"=~1 + average_montly_hours + s(average_montly_hours, 3) +
+         s(average_montly_hours, 6),
+           "time_spend_company"=~1 + time_spend_company + lo(time_spend_company, 3) +
+            s(time_spend_company, 2), 
+           "Work_accident"=~1+Work_accident, 
+           "promotion_last_5years"=~1 + promotion_last_5years,
+           # "sales"=~1 + sales,
+           "salary"=~1 + salary),
+           scale=2, steps=1000, parallel=T, direction="both")
+summary(fit.step)
+```
+\
+\textbf{Comment:}
+
+For the parametric effects, all variables were statistically significant at 0.001 significance level. 
+For the non-parameteric effects, the variables *time_spend_company,Work_accident, promotion_last_5years* and *salary* were statistically insignificant at any of the lest level whilst the remaining variables were all statistically significant at 0.001 alpha level. 
+
+```{r}
+anova(fit.step, gam.fit2)
+```
+
+
+\subsection{ROC and AUC for GAM}
+```{r warning=FALSE, message=FALSE}
+yhat <- gam.fit2$fitted.values
+gam.pred <- predict(gam.fit2, newdata=D2, type="response", se.fit=FALSE)
+library(cvAUC)
+gam.AUC <- ci.cvAUC(predictions = gam.pred, labels=yobs, 
+                    folds=1:length(gam.pred), confidence=0.95);
+gam.auc.ci <- round(gam.AUC$ci, digits=4)
+
+library(verification)
+mod.gam <- verify(obs=yobs, pred=gam.pred)
+#par(mfrow=c(1,1), mar=rep(4, 4))
+roc.plot(mod.gam, plot.thres = NULL)
+text(x=0.6, y=0.2, paste("Area under ROC =", round(gam.AUC$cvAUC, digits=4), 
+                  "with 95% CI (", gam.auc.ci[1], ",", gam.auc.ci[2], ").",
+                         sep=" "), col="blue", cex=0.9)
+
+auc.gam<-round(gam.AUC$cvAUC, digits=4)
+```
+\
+\textbf{Comment:}
+
+The AUC from the **GAM** model is `r round(gam.AUC$cvAUC, 2)` which is high and it tells us that the model is a good fit and has good prediction accuracy.From the output, it can be concluded from the confidence interval that the model shows good discrimination.
+
+**Plotting the (nonlinear) functional forms for continuous predictors.**
+```{r message=FALSE, warning=FALSE}
+par(mfrow=c(3,3), mar = rep(4,4))
+plot(gam.fit2, se =TRUE)
+```
+
+\textbf{Comment:}
+
+In the backfitting algorithm, each smoothing parameter was calculated adaptively. Because smoothing splines are utilized in this scenario, the tuning parameter is automatically optimized using minimal GCV. Stepwise selection with BIC was also used to choose variables.
+The considerable nonlinearity displayed in the plots above demonstrates that the logistic regression model is inadequate.
+
+\newpage
+
+\section{QUESTION 7 - Multivariate Adaptive Regression Splines (MARS)}
+
+
+```{r warning=FALSE, message=FALSE}
+# install.packages("earth")
+library(earth)    # for MARS
+library(pdp)      # for partial dependence plots
+library(vip)  
+library(caret)# for variable importance plots
+```
+
+\subsection{Fitting MARS model}
+
+```{r warning=FALSE, message=FALSE}
+fit.mars <- earth(left ~ .,  data = D1, degree=3, ncross=3,
+	glm=list(family=binomial(link = "logit")), 
+	pmethod="cv", nfold=10) # tuning parameter degree = 3
+
+summary(fit.mars)
+```
+
+**Model selection**
+```{r}
+# MODEL SELECTION
+par(mfrow=c(1, 2), mar=rep(4,4))
+q1 <- plot(fit.mars, which = 1, col.mean.infold.rsq="blue", 
+           col.infold.rsq="lightblue",col.grsq=0, col.rsq=0, 
+           col.vline=0, col.oof.vline=0)
+plotres(fit.mars, which=1, info = TRUE)
+
+```
+\
+\textbf{Comment:}
+
+The plot on the left indicates training and testing performance (Rsq on Y axis) obtained from the 10 fold cross validation performed thrice. The performance on training data (blue curve) increases as we increase model complexity; on independent data the performance (pink curve) increases as well.
+
+The plot on the right shows the best model selection (33 of 34 terms, 5 of 18 predictors using **pmethod=“cv”**) using green line, indicating optimal terms as 33.
+
+\
+
+**Variable importance plot**
+```{r}
+vip(fit.mars, num_features = 10, aesthetics = list(color = "darkblue", fill = "darkblue")) + ggtitle("GCV")
+
+```
+\
+\textbf{Comment:}
+
+Fromt the **vip**, we see that **satisfaction_level, number_project, time_spend_company** and **last_evaluation** are the four most influential variables; however, variable importance does not tell us how our model is treating the non-linear patterns for each feature. Also, if we look at the interaction terms our model retained, we see interactions between different hinge functions.
+
+\
+**Partial dependence plot**
+```{r}
+#par(mfrow=c(2,2), mar = rep(4,4))
+q1 <- partial(fit.mars, pred.var = "satisfaction_level", grid.resolution = 10)%>%autoplot()
+q2 <- partial(fit.mars, pred.var = "number_project", grid.resolution = 10)%>%autoplot()
+q3 <- partial(fit.mars, pred.var = "time_spend_company", grid.resolution = 10)%>%autoplot()
+q4 <- partial(fit.mars, pred.var = "last_evaluation", grid.resolution = 10)%>%autoplot()
+q5 <- partial(fit.mars, pred.var = c("last_evaluation","satisfaction_level"), 
+              grid.resolution = 10)%>%autoplot()
+q6 <- partial(fit.mars, pred.var = c("number_project","satisfaction_level"), 
+              grid.resolution = 10)%>%autoplot()
+
+grid.arrange(q1,q2,q3,q4,q5,q6, ncol = 3)
+```
+\
+\textbf{Comment:}
+
+From the first plot on the upper panel, we see that the is a sharp increase in odds of an employee quit until a certain threshold of satisfaction level, the odds start decreasing as satisfaction level increases. Also, the variables **number_project and log(odds(left))** seems to be a directly proportional.
+
+This 2-D plot gives us an idea about how the association of two variables at a time on **log(odds(left))**. On the X- Axis we have **satisfaction_level** and on the Y-Axis we have **last_evaluation**. The variation is **log(odds(left))** is indicated with the help of color scale (yellow indicating high odds and dark violet indicating low odds).
+\
+```{r}
+
+
+
+yhat.mars <- predict(fit.mars, newdata=D2, type="response")
+AUC.MARS <- ci.cvAUC(predictions=as.vector(yhat.mars), labels=yobs, folds=1:length(yhat.mars), confidence=0.95); AUC.MARS 
+auc.ci <- round(AUC.MARS$ci, digits=4)
+
+library(verification)
+mod.mars <- verify(obs=yobs, pred=yhat.mars)
+roc.plot(mod.mars, plot.thres = NULL, main="ROC Curve from MARS")
+text(x=0.6, y=0.2, paste("Area under ROC =", round(AUC.MARS$cvAUC, digits=4),
+	sep=" "), col="magenta", cex=1.2)
+```
+\
+\textbf{Comment:}
+
+The AUC from the MARS is `r round(AUC.MARS$cvAUC, 2)` which is high and it tells us that the model is a good fit and has good prediction accuracy.
+
+
+\newpage
+\section{Question 8 - Project Pursuit Regression}
+```{r}
+# FIT PPR MODELS 
+# nterms = number of terms to include in the final model.
+# max.terms = maximum number of terms to choose from when building the model.
+
+D1$left <- ifelse(D1$left=="stayed", 0, 1)
+fit0.ppr <- ppr(left ~ ., data = D1, 
+    nterms = 2, max.terms = 10, 
+    sm.method = "supsmu", bass=3, spen=0)
+summary(fit0.ppr)
+```
+```{r}
+par(mfrow=c(1,2), mar=rep(3,4))
+plot(fit0.ppr)
+
+```
+
+```{r}
+yhat1.pp <- predict(fit0.ppr, newdata = D2)
+
+qplot(yhat1.pp, geom="histogram", xlab="Predicted", 
+      fill=I("sky blue"), col=I("red"), binwidth=0.05)
+
+```
+```{r}
+# SCALE PREDICTED Y INTO [0,1]
+phat1.pp <- as.vector(scale(yhat1.pp, center=min(yhat1.pp), 
+                   scale = diff(range(yhat1.pp))))
+```
+
+```{r}
+ppr.AUC <- ci.cvAUC(predictions=phat1.pp, labels=yobs, 
+                    folds=1:length(phat1.pp), confidence=0.95)
+ppr.auc.ci <- round(ppr.AUC$ci, digits = 4)
+
+library(verification)
+mod.ppr <- verify(obs = yobs, pred = phat1.pp)
+roc.plot(mod.ppr, plot.thres=NULL)
+text(x=0.6, y=0.2, paste("Area under ROC = ", 
+                         round(ppr.AUC$cvAUC, digits = 4), 
+                         "with 95% CI (",
+                         ppr.auc.ci[1], ",", ppr.auc.ci[2], 
+                         ").", sep = " "), col="blue", cex =1.2)
+```
+\
+The AUC from the PPR is `r round(ppr.AUC$cvAUC, 2)` which is high and it tells us that the model is a good fit and has good prediction accuracy.
+
+\
+
+\section{Model Comparison}
+```{r warning=FALSE, message=FALSE}
+library(kableExtra)
+Measure <- c(AUC.LASSO$cvAUC, AUC.RF$cvAUC, gam.AUC$cvAUC, AUC.MARS$cvAUC,
+             ppr.AUC$cvAUC)
+mod <- data.frame("Method"= c("LASSO","Random Forest","GAM","MARS","PPR"),
+                       "AUC"= Measure)
+
+knitr::kable(mod, booktabs = T, format = "markdown", digits = 3) %>%
+  kable_paper("hover", full_width = F)%>% 
+  kable_styling(font_size = 12,bootstrap_options = "striped",
+                     full_width = F, latex_options = c("HOLD_position"))
+```
+\textbf{Comment:}
+
+From the output above, we can conclude that among all the five supervised learning approaches used, the **Random Forest** gives favorable result since its model produced relatively high area under the receiver operating characteristic curve, that is $AUC=$ `r round(AUC.RF$cvAUC, 2)`.
